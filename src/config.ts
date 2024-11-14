@@ -12,4 +12,3 @@ export const getEnv = (key: string, def?: string): string  => {
 export const sequence_id = getEnv("CRAWLORA_SEQUENCE_ID"); // provided by default
 
 export const apikey = getEnv('CRAWLORA_AUTH_KEY'); // provided by default
-export const showBrowser = getEnv('SHOW_BROWSER', 'false') === 'true' 

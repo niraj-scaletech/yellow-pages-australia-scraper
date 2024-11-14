@@ -1,59 +1,81 @@
-import { apikey, sequence_id, showBrowser } from "./config";
-
+import { apikey, sequence_id } from "./config";
 import { browser } from "@crawlora/browser";
+import { Page } from "puppeteer-extra-plugin/dist/puppeteer";
 
 export default async function ({
-  searches, // data coming from textarea which means it is multiline
+  urls,
 }: {
-  searches: string;
+  urls: string;
 }) {
+  const formedData = urls.trim().split("\n").map(v => v.trim());
 
-  const formedData = searches.trim().split("\n").map(v => v.trim())
+  await browser(async ({ page, wait, output, debug }) => {
+    for await (const url of formedData) {
+      await page.goto(url, { waitUntil: 'domcontentloaded' });
 
- await browser(async ({page, wait, output, debug }) => {
+      debug(`Navigating to: ${url}`);
 
-    for await (const searchs of formedData) {
+      await wait(2)
 
-      await page.goto("https://google.com");
+      const details = await extractProductDetails(page)
+      console.log("🚀 ~ forawait ~ details:", details);
 
-      debug(`visiting google website`)
-  
-      await wait(2);
-  
-      await page.type('textarea[name="q"]', searchs);
-
-      debug(`looking for textarea to type`)
-
-  
-      await page.keyboard.press("Enter");
-
-      debug(`pressing enter`)
-
-  
-      await page.waitForNavigation({ waitUntil: ["networkidle2"] });
-
-      debug(`waiting for page navigation`)
-
-  
-      const links = await page.$$eval("a", (anchors) =>
-        anchors.map((anchor) => anchor.href)
-      );
-
-      debug(`fetching links`)
-
-
-      await wait(2);
-
-      debug(`started submitting links`)
-
-      await Promise.all(links.map(async (link) => {
-        await output.create({sequence_id, sequence_output: { [searchs]: link }}) // save data per line
-      }))
-      
-      debug(`submitted links`)
-
+      await output.create({
+        sequence_id,
+        sequence_output: { ...details, Url: url }
+      })
     }
+  }, { apikey })
 
-  }, { showBrowser, apikey })
+}
 
+
+export async function extractProductDetails(page: Page) {
+  return await page.evaluate(() => {
+    const getTextContent = (element: Document | Element | null, selector: string) =>
+      element?.querySelector(selector)?.textContent?.trim() || 'N/A';
+
+    const getAttribute = (element: Document | Element | null, selector: string, attribute: string) =>
+      element?.querySelector(selector)?.getAttribute(attribute)?.trim() || 'N/A';
+
+    const contactDetails = document.querySelector('div.contact-details');
+
+    const rawOpeningHourText = document.querySelector('div.opening-hours-all-days')
+      ?.textContent?.replace(/[\n\t\s]+/g, '')?.trim() || 'N/A';
+
+    const openingHours = rawOpeningHourText !== 'N/A'
+      ? Array.from(rawOpeningHourText.matchAll(/(Mon|Tue|Wed|Thu|Fri|Sat|Sun)(24hours|[0-9:apm-]+-[0-9:apm]+|[^MonTueWedThuFriSatSun]*)/g))
+        .reduce((acc, [_, day, hours]) => {
+          const cleanedHours = hours.trim();
+          const formattedHours = cleanedHours === "24hours" ? "24 hours"
+            : /^[0-9:apm-]+-[0-9:apm]+$/.test(cleanedHours) ? cleanedHours
+              : "Closed";
+          return { ...acc, [day]: formattedHours };
+        }, {})
+      : 'N/A';
+
+    const formattedOpeningHours = openingHours !== 'N/A'
+      ? Object.entries(openingHours)
+        .map(([day, hours]) => `${day}: ${hours}`)
+        .join(', ')
+      : 'N/A';
+
+    return {
+      Listing_ID: getAttribute(contactDetails, 'div.listing-address', 'data-listing-id'),
+      Business_name: getTextContent(contactDetails, 'h1 .listing-name'),
+      Department: getTextContent(contactDetails, 'h2.listing-heading'),
+      Address: getTextContent(contactDetails, 'div.listing-address'),
+      Latitude: getAttribute(contactDetails, 'div.listing-address', 'data-geo-latitude'),
+      Longitude: getAttribute(contactDetails, 'div.listing-address', 'data-geo-longitude'),
+      Telephone: getTextContent(document, 'div.contacts .desktop-display-value'),
+      Email: getAttribute(document, 'div.contacts [data-email]', 'data-email'),
+      Website: (document.querySelector('div.contacts .contact-url') as HTMLAnchorElement)?.href || 'N/A',
+      Opening_hours: formattedOpeningHours,
+      ABN: getTextContent(document, 'dd.abn').replace(/[\t\s]+/g, ''),
+      ACN: getTextContent(document, 'dd.acn').replace(/[\t\s]+/g, ''),
+      Number_of_employees: getTextContent(document, 'dd.number-of-employees'),
+      Established: getTextContent(document, 'dd.established'),
+      Also_trade_as: getTextContent(document, 'dd.trading-aliases'),
+    }
+  })
 }
