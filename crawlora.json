@@ -14,5 +14,6 @@
     "short_description": "Get business phone, geographic info, website, email etc. from yellowpages.com.au by URL.",
     "version": "1.0.0",
     "documentation_file": "./documentation.md",
-    "input_file": "./input.json"
+    "input_file": "./input.json",
+    "app_id": "a8793e3a-4200-4ca6-a46d-245761b8d7da"
 }
